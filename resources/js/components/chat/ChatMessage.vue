@@ -27,18 +27,6 @@ const timeLabel = computed(() =>
         minute: '2-digit',
     }).format(new Date(props.message.createdAt)),
 );
-const metadataChips = computed(() => {
-    if (!props.message.controls) {
-        return [];
-    }
-
-    return [
-        props.message.controls.stylePreset,
-        props.message.controls.aspectRatio,
-        props.message.controls.quality,
-        '1 output',
-    ];
-});
 </script>
 
 <template>
@@ -157,15 +145,6 @@ const metadataChips = computed(() => {
                         </button>
                     </div>
 
-                    <div class="mt-5 flex flex-wrap gap-2">
-                        <span
-                            v-for="chip in metadataChips"
-                            :key="chip"
-                            class="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600"
-                        >
-                            {{ chip }}
-                        </span>
-                    </div>
                 </article>
 
                 <div v-if="hasImages" class="grid gap-4 md:grid-cols-2">

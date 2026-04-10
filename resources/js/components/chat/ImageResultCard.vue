@@ -29,36 +29,9 @@ const actionButtonClass =
             >
                 <img :src="image.url" :alt="image.alt" class="h-full w-full object-cover transition duration-700 group-hover:scale-[1.03]" />
             </div>
-
-            <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-900/10 to-transparent" />
-
-            <div class="absolute top-4 left-4 flex items-center gap-1.5">
-                <span
-                    v-for="color in image.palette"
-                    :key="color"
-                    class="h-3.5 w-3.5 rounded-full border border-white/60 shadow-sm"
-                    :style="{ backgroundColor: color }"
-                />
-            </div>
-
-            <div class="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-4 text-left text-white">
-                <div>
-                    <p class="font-display text-lg font-semibold">{{ image.label }}</p>
-                    <p class="mt-1 text-sm text-white/[0.72]">{{ controls?.stylePreset ?? 'Custom' }} · {{ image.width }} × {{ image.height }}</p>
-                </div>
-
-                <span class="rounded-full bg-white/[0.14] px-3 py-1 text-[11px] font-medium tracking-[0.22em] text-white/[0.92] uppercase">
-                    {{ image.format }}
-                </span>
-            </div>
         </button>
 
         <div class="space-y-4 p-4">
-            <div class="flex items-center justify-between gap-3 text-xs text-slate-500">
-                <span>Seed {{ image.seed }}</span>
-                <span>{{ controls?.quality ?? 'Balanced' }}</span>
-            </div>
-
             <div class="grid grid-cols-2 gap-2">
                 <button type="button" :class="actionButtonClass" @click="$emit('preview', image)">Preview</button>
                 <button type="button" :class="actionButtonClass" @click="$emit('download', image)">Download</button>

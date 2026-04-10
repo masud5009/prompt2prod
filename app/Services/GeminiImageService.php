@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 class GeminiImageService
 {
     private const DEFAULT_IMAGE_MODELS = [
+        'imagen-4.0-fast-generate-001',
         'gemini-2.5-flash-image-preview',
         'gemini-2.5-flash',
         'imagen-4.0-generate-preview-06-06',
@@ -310,7 +311,21 @@ class GeminiImageService
 
     private function buildVariantPrompt(string $prompt, array $controls, int $variant): string
     {
+        $instructions = [
+            'Create a high-quality image that follows the user prompt exactly.',
+            'Do not invent extra text, labels, slogans, subtitles, or decorative copy unless the user explicitly asked for them.',
+            'Preserve every non-English word or phrase exactly as written by the user.',
+            'Do not translate, romanize, paraphrase, or replace Bengali text with English text.',
+            'If the user requested Bengali text, render it legibly in Bengali script without changing the wording.',
+        ];
+
+        if ($this->isPackagingPrompt($prompt)) {
+            $instructions[] = 'This is a packaging or product mockup request, so keep the layout polished, premium, and realistic.';
+            $instructions[] = 'Do not add an English product title when the prompt already specifies a Bengali product name unless the user explicitly requested that English title.';
+        }
+
         return trim(implode("\n", [
+            ...$instructions,
             $prompt,
             'Style preset: '.($controls['stylePreset'] ?? 'Editorial'),
             'Aspect ratio: '.($controls['aspectRatio'] ?? '4:5'),
@@ -353,5 +368,10 @@ class GeminiImageService
             'Analog' => ['#F1E6D2', '#A26D52', '#41566B', '#7EA095'],
             default => ['#CBD5E1', '#94A3B8', '#475569', '#E2E8F0'],
         };
+    }
+
+    private function isPackagingPrompt(string $prompt): bool
+    {
+        return preg_match('/\b(packaging|package|label|jar|box|bottle|container|mockup|branding|product\s+mockup|pack\s*shot|wrapper|carton)\b/i', $prompt) === 1;
     }
 }

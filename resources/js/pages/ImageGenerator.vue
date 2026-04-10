@@ -415,7 +415,7 @@ function createId(prefix: string) {
                 @click.self="closePreview"
             >
                 <div
-                    class="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[34px] border border-white/[0.15] bg-slate-950 text-white shadow-[0_30px_120px_rgba(2,6,23,0.55)]"
+                    class="relative overflow-hidden rounded-[28px] border border-white/[0.15] bg-slate-950 p-2 text-white shadow-[0_30px_120px_rgba(2,6,23,0.55)]"
                 >
                     <button
                         type="button"
@@ -428,11 +428,11 @@ function createId(prefix: string) {
                         </svg>
                     </button>
 
-                    <div class="flex-1 bg-[linear-gradient(180deg,#0F172A_0%,#111827_100%)] p-4 sm:p-6">
-                        <div class="h-full overflow-hidden rounded-[28px] border border-white/10 bg-slate-900">
-                            <img :alt="previewState.image.alt" :src="previewState.image.url" class="h-full w-full object-contain" />
-                        </div>
-                    </div>
+                    <img
+                        :alt="previewState.image.alt"
+                        :src="previewState.image.url"
+                        class="block max-h-[92vh] max-w-[94vw] rounded-[22px] object-contain"
+                    />
                 </div>
             </div>
         </Transition>
