@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import ChatHeader from '@/components/chat/ChatHeader.vue';
 import ChatMessage from '@/components/chat/ChatMessage.vue';
 import ChatSidebar from '@/components/chat/ChatSidebar.vue';
 import PromptInput from '@/components/chat/PromptInput.vue';
-import { addMetadataOverlay, downloadImageAsPNG } from '@/lib/imageOverlay';
-import { generateGeminiImages } from '@/lib/geminiImageGenerator';
+import { downloadImageAsPNG } from '@/lib/imageOverlay';
 import type { ChatMessage as ChatMessageType, ChatSession, GeneratedImage, GenerationControls } from '@/types/image-generator';
+
+const props = defineProps<{
+    initialSessions?: ChatSession[];
+}>();
 
 interface PreviewState {
     image: GeneratedImage;
@@ -37,17 +40,14 @@ const isSidebarOpen = ref(false);
 const previewState = ref<PreviewState | null>(null);
 const scrollAnchorRef = ref<HTMLDivElement | null>(null);
 const composerRef = ref<{ focus: () => void } | null>(null);
-const pendingController = ref<AbortController | null>(null);
 const toasts = ref<Toast[]>([]);
-const previewImageUrl = ref<string>('');
 
-const sessions = ref<ChatSession[]>(createInitialSessions());
+const sessions = ref<ChatSession[]>(normalizeInitialSessions(props.initialSessions));
 const currentSessionId = ref(sessions.value[0]?.id ?? '');
 
 const currentSession = computed(() => sessions.value.find((session) => session.id === currentSessionId.value));
 const hasPendingGeneration = computed(() => sessions.value.some((session) => session.messages.some((message) => message.status === 'loading')));
 const currentMessageCount = computed(() => currentSession.value?.messages.length ?? 0);
-const previewImageWithOverlay = computed(() => previewImageUrl.value || previewState.value?.image.url);
 
 watch(
     () => currentSessionId.value,
@@ -64,34 +64,43 @@ watch(
     { flush: 'post' },
 );
 
-watch(
-    () => previewState.value,
-    async (newState) => {
-        if (newState) {
-            try {
-                const blob = await addMetadataOverlay(newState.image.url, {
-                    description: newState.prompt,
-                    size: { width: newState.image.width, height: newState.image.height },
-                    seed: newState.image.seed,
-                    palette: newState.image.palette,
-                    stylePreset: newState.controls?.stylePreset,
-                    quality: newState.controls?.quality,
-                });
-                previewImageUrl.value = URL.createObjectURL(blob);
-            } catch {
-                // Silently fail and show original image
-                previewImageUrl.value = '';
-            }
-        }
-    },
-);
-
-onBeforeUnmount(() => {
-    pendingController.value?.abort();
-    if (previewImageUrl.value) {
-        URL.revokeObjectURL(previewImageUrl.value);
+function normalizeInitialSessions(rawSessions?: ChatSession[]) {
+    if (!rawSessions || rawSessions.length === 0) {
+        return createInitialSessions();
     }
-});
+
+    return rawSessions.map((session: any) => ({
+        id: session.id,
+        title: session.title,
+        preview: session.preview ?? '',
+        updatedAt: session.updatedAt ?? session.updated_at ?? new Date().toISOString(),
+        messages: (session.messages ?? []).map((message: any) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            createdAt: message.createdAt ?? message.created_at ?? new Date().toISOString(),
+            status: message.status,
+            controls: message.controls,
+            errorMessage: message.errorMessage ?? message.error_message,
+            revisedPrompt: message.revisedPrompt ?? message.revised_prompt,
+            latencyMs: message.latencyMs ?? message.latency_ms,
+            images: (message.images ?? []).map((image: any) => ({
+                id: image.id,
+                label: image.label,
+                url: image.url,
+                alt: image.alt,
+                width: image.width,
+                height: image.height,
+                prompt: image.prompt,
+                revisedPrompt: image.revisedPrompt ?? image.revised_prompt,
+                seed: image.seed,
+                palette: Array.isArray(image.palette) ? image.palette : [],
+                format: image.format,
+            })),
+        })),
+        isDraft: false,
+    }));
+}
 
 function createInitialSessions() {
     const now = Date.now();
@@ -151,51 +160,66 @@ async function submitPrompt(promptOverride?: string, controlsOverride?: Generati
     }
 
     await scrollToBottom('smooth');
-    void runGeneration(session.id, assistantMessage.id, content, controlsSnapshot);
-}
-
-async function runGeneration(sessionId: string, messageId: string, content: string, controls: GenerationControls) {
-    const controller = new AbortController();
-    pendingController.value = controller;
 
     try {
-        const result = await generateGeminiImages(content, controls, { signal: controller.signal });
-        const message = findAssistantMessage(sessionId, messageId);
-
-        if (!message) {
-            return;
-        }
-
-        message.status = 'complete';
-        message.images = result.images;
-        message.revisedPrompt = result.revisedPrompt;
-        message.latencyMs = result.latencyMs;
-        message.errorMessage = undefined;
-        pushToast('Images generated successfully with Gemini.', 'success');
+        const response = await postChatGenerate(session.id, content, controlsSnapshot);
+        replaceSession(session.id, response);
+        currentSessionId.value = response.id;
+        pushToast('Images generated and saved.', 'success');
     } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-            return;
-        }
-
-        const message = findAssistantMessage(sessionId, messageId);
+        const message = findAssistantMessage(session.id, assistantMessage.id);
 
         if (message) {
             message.status = 'error';
-            message.errorMessage = error instanceof Error ? error.message : 'Gemini could not finish this request.';
+            message.errorMessage = error instanceof Error ? error.message : 'Generation failed.';
             message.images = undefined;
             message.revisedPrompt = undefined;
             message.latencyMs = undefined;
         }
 
         pushToast('Generation failed. Retry the prompt.', 'error');
-    } finally {
-        if (pendingController.value === controller) {
-            pendingController.value = null;
-        }
     }
 }
 
-function retryMessage(messageId: string) {
+async function postChatGenerate(sessionId: string | number, content: string, controls: GenerationControls) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
+    const response = await fetch('/chat/generate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+        },
+        body: JSON.stringify({
+            session_id: typeof sessionId === 'number' ? sessionId : null,
+            prompt: content,
+            controls,
+        }),
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+        throw new Error(payload.message ?? 'Generation failed.');
+    }
+
+    return normalizeInitialSessions([payload.session])[0];
+}
+
+function replaceSession(previousId: string | number, updatedSession: ChatSession) {
+    const index = sessions.value.findIndex((item) => item.id === previousId || item.id === updatedSession.id);
+
+    if (index >= 0) {
+        const updated = [...sessions.value];
+        updated[index] = updatedSession;
+        sessions.value = updated.sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+        return;
+    }
+
+    sessions.value = [updatedSession, ...sessions.value].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+}
+
+function retryMessage(messageId: string | number) {
     if (hasPendingGeneration.value) {
         return;
     }
@@ -207,17 +231,10 @@ function retryMessage(messageId: string) {
         return;
     }
 
-    message.status = 'loading';
-    message.errorMessage = undefined;
-    message.images = undefined;
-    message.revisedPrompt = undefined;
-    message.latencyMs = undefined;
-    touchSession(session, message.content, new Date().toISOString(), false);
-    sortSessions();
-    void runGeneration(session.id, message.id, message.content, message.controls);
+    void submitPrompt(message.content, message.controls);
 }
 
-function findAssistantMessage(sessionId: string, messageId: string) {
+function findAssistantMessage(sessionId: string | number, messageId: string | number) {
     const session = sessions.value.find((item) => item.id === sessionId);
 
     return session?.messages.find((item) => item.id === messageId && item.role === 'assistant');
@@ -246,7 +263,7 @@ function startNewChat() {
     void nextTick(() => composerRef.value?.focus());
 }
 
-function selectSession(sessionId: string) {
+function selectSession(sessionId: string | number) {
     currentSessionId.value = sessionId;
     isSidebarOpen.value = false;
 }
@@ -257,7 +274,6 @@ function handleRegenerate(payload: { prompt: string; controls?: GenerationContro
 
 function handlePreview(payload: PreviewState) {
     previewState.value = payload;
-    previewImageUrl.value = '';
 }
 
 function closePreview() {
@@ -293,9 +309,9 @@ async function copyPrompt(value: string) {
 
 async function downloadImage(image: GeneratedImage) {
     try {
-        await downloadImageAsPNG(image, image.prompt);
-        pushToast('Image downloaded as PNG with metadata.', 'success');
-    } catch (error) {
+        await downloadImageAsPNG(image);
+        pushToast('Image downloaded.', 'success');
+    } catch {
         pushToast('Failed to download image.', 'error');
     }
 }
@@ -325,15 +341,6 @@ function createId(prefix: string) {
     idSequence += 1;
 
     return `${prefix}-${idSequence}`;
-}
-
-function slugify(value: string) {
-    return value
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-')
-        .slice(0, 48);
 }
 </script>
 
@@ -408,83 +415,24 @@ function slugify(value: string) {
                 @click.self="closePreview"
             >
                 <div
-                    class="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[34px] border border-white/[0.15] bg-slate-950 text-white shadow-[0_30px_120px_rgba(2,6,23,0.55)] lg:flex-row"
+                    class="relative flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[34px] border border-white/[0.15] bg-slate-950 text-white shadow-[0_30px_120px_rgba(2,6,23,0.55)]"
                 >
+                    <button
+                        type="button"
+                        class="absolute top-4 right-4 z-10 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-slate-900/70 text-white/80 transition hover:bg-slate-800 hover:text-white"
+                        @click="closePreview"
+                    >
+                        <span class="sr-only">Close preview</span>
+                        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" d="M6 6L18 18M18 6L6 18" />
+                        </svg>
+                    </button>
+
                     <div class="flex-1 bg-[linear-gradient(180deg,#0F172A_0%,#111827_100%)] p-4 sm:p-6">
                         <div class="h-full overflow-hidden rounded-[28px] border border-white/10 bg-slate-900">
-                            <img :alt="previewState.image.alt" :src="previewImageWithOverlay ?? previewState.image.url" class="h-full w-full object-contain" />
+                            <img :alt="previewState.image.alt" :src="previewState.image.url" class="h-full w-full object-contain" />
                         </div>
                     </div>
-
-                    <aside class="w-full border-t border-white/10 bg-white/[0.03] p-6 lg:w-[360px] lg:border-t-0 lg:border-l">
-                        <div class="flex items-start justify-between gap-4">
-                            <div>
-                                <p class="text-[11px] font-medium tracking-[0.24em] text-white/[0.45] uppercase">
-                                    {{ previewState.image.label }}
-                                </p>
-                                <h3 class="mt-2 font-display text-3xl font-semibold text-white">Preview</h3>
-                            </div>
-
-                            <button
-                                type="button"
-                                class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white"
-                                @click="closePreview"
-                            >
-                                <span class="sr-only">Close preview</span>
-                                <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8">
-                                    <path stroke-linecap="round" d="M6 6L18 18M18 6L6 18" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <p class="mt-5 text-sm leading-7 text-white/[0.72]">
-                            {{ previewState.prompt }}
-                        </p>
-
-                        <div class="mt-6 grid grid-cols-2 gap-3 text-sm">
-                            <div class="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-                                <p class="text-[11px] font-medium tracking-[0.2em] text-white/40 uppercase">Size</p>
-                                <p class="mt-2 text-white">{{ previewState.image.width }} × {{ previewState.image.height }}</p>
-                            </div>
-                            <div class="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-                                <p class="text-[11px] font-medium tracking-[0.2em] text-white/40 uppercase">Seed</p>
-                                <p class="mt-2 text-white">{{ previewState.image.seed }}</p>
-                            </div>
-                        </div>
-
-                        <div class="mt-6 flex flex-wrap gap-2">
-                            <span
-                                v-for="color in previewState.image.palette"
-                                :key="color"
-                                class="h-8 w-8 rounded-full border border-white/20"
-                                :style="{ backgroundColor: color }"
-                            />
-                        </div>
-
-                        <div class="mt-8 grid gap-3">
-                            <button
-                                type="button"
-                                class="inline-flex items-center justify-center rounded-[22px] bg-white px-4 py-3 text-sm font-medium text-slate-950 transition hover:bg-slate-100"
-                                @click="downloadImage(previewState.image)"
-                            >
-                                Download
-                            </button>
-                            <button
-                                type="button"
-                                class="inline-flex items-center justify-center rounded-[22px] border border-white/[0.12] bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                                @click="copyPrompt(previewState.prompt)"
-                            >
-                                Copy prompt
-                            </button>
-                            <button
-                                type="button"
-                                class="inline-flex items-center justify-center rounded-[22px] border border-white/[0.12] bg-white/5 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/10"
-                                @click="handleRegenerate({ prompt: previewState.prompt, controls: previewState.controls })"
-                            >
-                                Regenerate
-                            </button>
-                        </div>
-                    </aside>
                 </div>
             </div>
         </Transition>

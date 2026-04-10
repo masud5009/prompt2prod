@@ -5,14 +5,14 @@ import type { ChatSession } from '@/types/image-generator';
 
 const props = defineProps<{
     sessions: ChatSession[];
-    activeSessionId: string;
+    activeSessionId: string | number;
     isOpen: boolean;
 }>();
 
 const emit = defineEmits<{
     close: [];
     'new-chat': [];
-    select: [sessionId: string];
+    select: [sessionId: string | number];
 }>();
 
 const hasSessions = computed(() => props.sessions.length > 0);

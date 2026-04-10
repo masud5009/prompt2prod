@@ -16,7 +16,7 @@ export interface GenerationControls {
 }
 
 export interface GeneratedImage {
-    id: string;
+    id: string | number;
     label: string;
     url: string;
     alt: string;
@@ -30,7 +30,7 @@ export interface GeneratedImage {
 }
 
 export interface ChatMessage {
-    id: string;
+    id: string | number;
     role: MessageRole;
     content: string;
     createdAt: string;
@@ -43,7 +43,7 @@ export interface ChatMessage {
 }
 
 export interface ChatSession {
-    id: string;
+    id: string | number;
     title: string;
     preview: string;
     updatedAt: string;
