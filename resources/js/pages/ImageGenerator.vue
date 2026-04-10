@@ -6,6 +6,7 @@ import ChatHeader from '@/components/chat/ChatHeader.vue';
 import ChatMessage from '@/components/chat/ChatMessage.vue';
 import ChatSidebar from '@/components/chat/ChatSidebar.vue';
 import PromptInput from '@/components/chat/PromptInput.vue';
+import { addMetadataOverlay, downloadImageAsPNG } from '@/lib/imageOverlay';
 import { generateGeminiImages } from '@/lib/geminiImageGenerator';
 import type { ChatMessage as ChatMessageType, ChatSession, GeneratedImage, GenerationControls } from '@/types/image-generator';
 
@@ -38,6 +39,7 @@ const scrollAnchorRef = ref<HTMLDivElement | null>(null);
 const composerRef = ref<{ focus: () => void } | null>(null);
 const pendingController = ref<AbortController | null>(null);
 const toasts = ref<Toast[]>([]);
+const previewImageUrl = ref<string>('');
 
 const sessions = ref<ChatSession[]>(createInitialSessions());
 const currentSessionId = ref(sessions.value[0]?.id ?? '');
@@ -45,6 +47,7 @@ const currentSessionId = ref(sessions.value[0]?.id ?? '');
 const currentSession = computed(() => sessions.value.find((session) => session.id === currentSessionId.value));
 const hasPendingGeneration = computed(() => sessions.value.some((session) => session.messages.some((message) => message.status === 'loading')));
 const currentMessageCount = computed(() => currentSession.value?.messages.length ?? 0);
+const previewImageWithOverlay = computed(() => previewImageUrl.value || previewState.value?.image.url);
 
 watch(
     () => currentSessionId.value,
@@ -61,8 +64,33 @@ watch(
     { flush: 'post' },
 );
 
+watch(
+    () => previewState.value,
+    async (newState) => {
+        if (newState) {
+            try {
+                const blob = await addMetadataOverlay(newState.image.url, {
+                    description: newState.prompt,
+                    size: { width: newState.image.width, height: newState.image.height },
+                    seed: newState.image.seed,
+                    palette: newState.image.palette,
+                    stylePreset: newState.controls?.stylePreset,
+                    quality: newState.controls?.quality,
+                });
+                previewImageUrl.value = URL.createObjectURL(blob);
+            } catch {
+                // Silently fail and show original image
+                previewImageUrl.value = '';
+            }
+        }
+    },
+);
+
 onBeforeUnmount(() => {
     pendingController.value?.abort();
+    if (previewImageUrl.value) {
+        URL.revokeObjectURL(previewImageUrl.value);
+    }
 });
 
 function createInitialSessions() {
@@ -229,6 +257,7 @@ function handleRegenerate(payload: { prompt: string; controls?: GenerationContro
 
 function handlePreview(payload: PreviewState) {
     previewState.value = payload;
+    previewImageUrl.value = '';
 }
 
 function closePreview() {
@@ -262,12 +291,13 @@ async function copyPrompt(value: string) {
     }
 }
 
-function downloadImage(image: GeneratedImage) {
-    const link = document.createElement('a');
-    link.href = image.url;
-    link.download = `${slugify(image.prompt)}-${image.label.toLowerCase().replace(/\s+/g, '-')}.svg`;
-    link.click();
-    pushToast('Mock asset downloaded.', 'neutral');
+async function downloadImage(image: GeneratedImage) {
+    try {
+        await downloadImageAsPNG(image, image.prompt);
+        pushToast('Image downloaded as PNG with metadata.', 'success');
+    } catch (error) {
+        pushToast('Failed to download image.', 'error');
+    }
 }
 
 function pushToast(message: string, tone: Toast['tone']) {
@@ -441,7 +471,7 @@ function slugify(value: string) {
                 >
                     <div class="flex-1 bg-[linear-gradient(180deg,#0F172A_0%,#111827_100%)] p-4 sm:p-6">
                         <div class="h-full overflow-hidden rounded-[28px] border border-white/10 bg-slate-900">
-                            <img :alt="previewState.image.alt" :src="previewState.image.url" class="h-full w-full object-contain" />
+                            <img :alt="previewState.image.alt" :src="previewImageWithOverlay ?? previewState.image.url" class="h-full w-full object-contain" />
                         </div>
                     </div>
 
