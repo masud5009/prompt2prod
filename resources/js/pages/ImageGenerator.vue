@@ -370,81 +370,22 @@ function slugify(value: string) {
 
                 <main class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
                     <div class="mx-auto flex min-h-full max-w-5xl flex-col">
-                        <Transition name="fade-up" mode="out-in">
-                            <section
-                                v-if="!currentSession?.messages.length"
-                                key="empty"
-                                class="relative my-auto overflow-hidden rounded-[40px] border border-white/75 bg-white/[0.68] p-8 shadow-[0_28px_120px_rgba(15,23,42,0.1)] backdrop-blur-2xl sm:p-10"
-                            >
-                                <div
-                                    class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.14),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(13,148,136,0.14),transparent_26%)]"
+                        <section class="pb-4">
+                            <TransitionGroup name="message-fade" tag="div" class="space-y-6">
+                                <ChatMessage
+                                    v-for="message in currentSession?.messages"
+                                    :key="message.id"
+                                    :message="message"
+                                    @copy-prompt="copyPrompt"
+                                    @download="downloadImage"
+                                    @preview="handlePreview"
+                                    @regenerate="handleRegenerate"
+                                    @retry="retryMessage"
                                 />
-                                <div class="relative">
-                                    <span
-                                        class="inline-flex rounded-full bg-slate-950 px-4 py-2 text-[11px] font-medium tracking-[0.24em] text-white uppercase"
-                                    >
-                                        Premium AI image workflows
-                                    </span>
+                            </TransitionGroup>
 
-                                    <h1 class="mt-6 max-w-3xl font-display text-4xl leading-tight font-semibold text-slate-950 sm:text-5xl">
-                                        Build campaign-quality image directions from a single prompt.
-                                    </h1>
-
-                                    <p class="mt-5 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
-                                        Write your own prompt below and Gemini will generate images only when you submit.
-                                    </p>
-
-                                    <div class="mt-8 grid gap-4 md:grid-cols-3">
-                                        <div class="glass-panel rounded-[28px] p-5">
-                                            <p class="text-[11px] font-medium tracking-[0.2em] text-slate-400 uppercase">Workspace</p>
-                                            <p class="mt-3 font-display text-2xl text-slate-950">Session history</p>
-                                            <p class="mt-2 text-sm leading-6 text-slate-600">
-                                                Every prompt and render stays threaded for easy iteration.
-                                            </p>
-                                        </div>
-
-                                        <div class="glass-panel rounded-[28px] p-5">
-                                            <p class="text-[11px] font-medium tracking-[0.2em] text-slate-400 uppercase">Controls</p>
-                                            <p class="mt-3 font-display text-2xl text-slate-950">Creative presets</p>
-                                            <p class="mt-2 text-sm leading-6 text-slate-600">
-                                                Tune style, ratio, quality, and output count without leaving the composer.
-                                            </p>
-                                        </div>
-
-                                        <div class="glass-panel rounded-[28px] p-5">
-                                            <p class="text-[11px] font-medium tracking-[0.2em] text-slate-400 uppercase">Delivery</p>
-                                            <p class="mt-3 font-display text-2xl text-slate-950">API-ready shape</p>
-                                            <p class="mt-2 text-sm leading-6 text-slate-600">
-                                                Replace the mock renderer with a backend call and keep the same message model.
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div class="mt-10 rounded-[28px] border border-white/80 bg-white/80 p-5">
-                                        <p class="text-sm leading-7 text-slate-600">
-                                            No demo prompts are preloaded. Use the composer to send a prompt and start generating real images.
-                                        </p>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section v-else key="conversation" class="pb-4">
-                                <TransitionGroup name="message-fade" tag="div" class="space-y-6">
-                                    <ChatMessage
-                                        v-for="message in currentSession?.messages"
-                                        :key="message.id"
-                                        :message="message"
-                                        @copy-prompt="copyPrompt"
-                                        @download="downloadImage"
-                                        @preview="handlePreview"
-                                        @regenerate="handleRegenerate"
-                                        @retry="retryMessage"
-                                    />
-                                </TransitionGroup>
-
-                                <div ref="scrollAnchorRef" />
-                            </section>
-                        </Transition>
+                            <div ref="scrollAnchorRef" />
+                        </section>
                     </div>
                 </main>
 

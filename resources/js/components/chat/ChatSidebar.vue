@@ -145,12 +145,6 @@ function closeSidebar() {
                 </div>
             </div>
 
-            <div class="mt-6 rounded-[24px] border border-white/10 bg-white/[0.04] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-                <p class="text-[11px] font-medium tracking-[0.24em] text-white/[0.45] uppercase">Live mode</p>
-                <p class="mt-2 text-sm leading-6 text-white/[0.68]">
-                    Gemini image generation is active through your Laravel backend endpoint.
-                </p>
-            </div>
         </div>
     </aside>
 </template>
